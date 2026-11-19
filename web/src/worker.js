@@ -1,5 +1,5 @@
 // 图隐 DrawVeil · Cloudflare Worker：只提供静态页面，图纸处理全部在用户浏览器里完成
-const VERSION = '4';
+const VERSION = '5';
 const T = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', txt: 'text/plain; charset=utf-8', svg: 'image/svg+xml', css: 'text/css; charset=utf-8' };
 const FILES = {
   '/': ['index.v3.html', T.html], '/index.html': ['index.v3.html', T.html], '/app.js': ['app.v3.js', T.js], '/app.css': ['app.v4.css', T.css],
