@@ -4,6 +4,10 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: '给已有版本补打包，例如 v1.0.0（留空只打包不发布）'
+        required: false
 permissions:
   contents: write
 jobs:
@@ -21,7 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, arch: arm64 }
+          - { os: macos-15, arch: arm64 }
           - { os: macos-15-intel, arch: intel }
     runs-on: ${{ matrix.os }}
     steps:
@@ -30,7 +34,8 @@ jobs:
         with: { python-version: '3.12' }
       - name: 版本号
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then V="${GITHUB_REF_NAME#v}"; else V="0.0.0"; fi
+          T="${{ inputs.tag }}"; [ -n "$T" ] || { [ "$GITHUB_REF_TYPE" = tag ] && T="$GITHUB_REF_NAME"; }
+          if [ -n "$T" ]; then V="${T#v}"; else V="0.0.0"; fi
           echo "V=$V" >> "$GITHUB_ENV"
       - run: pip install -r desktop/requirements.txt
       - name: 打包 .app 和 .dmg
@@ -64,7 +69,8 @@ jobs:
         with: { python-version: '3.12' }
       - name: 版本号
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then V="${GITHUB_REF_NAME#v}"; else V="0.0.0"; fi
+          T="${{ inputs.tag }}"; [ -n "$T" ] || { [ "$GITHUB_REF_TYPE" = tag ] && T="$GITHUB_REF_NAME"; }
+          if [ -n "$T" ]; then V="${T#v}"; else V="0.0.0"; fi
           echo "V=$V" >> "$GITHUB_ENV"
       - run: pip install -r desktop/requirements.txt
       - name: 打包 .exe
@@ -92,7 +98,7 @@ jobs:
 
   release:
     needs: [mac, windows]
-    if: always() && startsWith(github.ref, 'refs/tags/') && needs.windows.result == 'success'
+    if: always() && (startsWith(github.ref, 'refs/tags/') || inputs.tag != '') && needs.windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -102,6 +108,7 @@ jobs:
       - run: ls -la out
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: out/*
           generate_release_notes: true
           body: |
