@@ -12,7 +12,10 @@ CAD 图纸信息脱敏工具 (DXF / DWG)
     缩略图、编辑时长、GUID……）；
   * 处理完自动做“几何指纹”比对，证明几何数据零改动，并扫描残留。
 
-只依赖 Python 3.8+ 标准库。DWG 通过 ODA File Converter（免费）先转 DXF 处理，再转回 DWG。
+只依赖 Python 3.8+ 标准库。DWG 先转 DXF 处理，再转回 DWG：
+  优先用 ODA File Converter（免费，需自行安装，质量最好）；
+  没装 ODA 时用内置/系统里的 LibreDWG 兜底（只能写 R2000 格式的 DWG，属实验功能）。
+  写出的 DWG 会再读回来核对图元数量、几何和残留。
 
 用法：
   python3 cad_desensitize.py gui                       # 打开图形界面（浏览器）
@@ -43,7 +46,7 @@ import webbrowser
 import zipfile
 from collections import OrderedDict, defaultdict
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # =====================================================================
 # 默认配置
@@ -105,8 +108,10 @@ DEFAULT_CONFIG = {
         "coord": "*",
     },
     "output_format": "same",        # same / dxf / dwg
-    "dwg_version": "ACAD2018",      # 输出 DWG 版本：ACAD2018 / ACAD2013 / ACAD2010 / ACAD2007 / ACAD2004 / ACAD2000
+    "dwg_version": "same",          # 输出 DWG 版本：same（与原 DWG 相同）/ ACAD2018 / ACAD2013 / ACAD2010 / ACAD2007 / ACAD2004 / ACAD2000
     "oda_converter": "",            # ODA File Converter 路径，留空自动查找
+    "dwg_converter": "auto",        # auto（ODA 优先，LibreDWG 兜底）/ oda / libredwg
+    "libredwg_dir": "",             # LibreDWG 程序所在目录（含 dwg2dxf、dxf2dwg），留空自动查找
 }
 
 CAT_NAMES = OrderedDict([
@@ -188,6 +193,26 @@ COMMON_WORDS = _ws("""施工图 初设 初步设计 方案 方案设计 施工�
 已签 同上 详见 见图 待定 无 合格 通过 有效 作废 出图 晒图 存档 设计院 本院 我院 本公司 业主 甲方 乙方 监理 施工
 总包 分包 签字有效 电子签名 电子签章 平面图 立面图 剖面图 详图 大样 大样图 节点 说明 目录 封面 首页 附注 附图""")
 EN_NONNAMES = _ws("NA N/A NONE NULL DATE SCALE NAME SIGN SIGNATURE TITLE REV REVISION NO NUMBER SHEET DRAWING CHECK APPROVE DESIGN")
+# 中英双语图签里的英文标签词：整行都由这些词组成时，它是标签，不是要脱敏的值
+EN_LABEL_WORDS = _ws("""BY OF IN FOR AND THE TO ON AT DESIGNED DESIGN DESIGNER DRAWN DRAFTED DRAFTER DRAWER DRAFTSMAN CHECKED CHECKER
+CHECK VERIFIED VERIFY VERIFIER REVIEWED REVIEW REVIEWER APPROVED APPROVE APPROVAL APPROVER AUTHORIZED AUTHORISED
+AUDITED AUDIT AUDITOR EXAMINED SUPERVISOR SUPERVISED SUPERVISION PROJECT PROJECTS SUB SUB-PROJECT SUBPROJECT NAME
+NAMES TITLE SITE LOCATION ADDRESS CLIENT OWNER EMPLOYER DEVELOPER CONTRACTOR CONSULTANT ARCHITECT ARCHITECTURE
+ARCHITECTURAL ENGINEER ENGINEERING STRUCTURAL STRUCTURE CIVIL CHIEF LEADER LEAD MANAGER DIRECTOR DISCIPLINE PROFESSIONAL
+RESPONSIBLE PERSON PERSONS CHARGE COORDINATION COORDINATED COUNTERSIGN COUNTERSIGNED SIGN SIGNED SIGNATURE SEAL
+STAMP DATE SCALE NO NO. NUMBER SHEET SHEETS DRAWING DRAWINGS DWG STAGE PHASE REV REVISION VERSION STATUS JOB CONTRACT
+FILE ISSUE ISSUED CONSTRUCTION REMARK REMARKS NOTE NOTES DESCRIPTION CERTIFICATE REGISTERED REGISTRATION
+QUALIFICATION LICENSE LICENCE CODE GRADE UNIT ITEM ITEMS TOTAL PAGE PART PLAN ELEVATION SECTION DETAIL KEY CAD
+MEP ELEC ELECTRICAL PLUMBING HVAC MECHANICAL BUILDING BLDG FLOOR AREA""")
+# 常见姓氏（含复姓）。只用于“推断出来的人名”：首字不是常见姓氏、又含明显不是人名的字时，不当作人名
+SURNAMES = set("""王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾肖萧田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦
+付傅方白邹孟熊秦邱江尹薛闫阎段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤常温康施文牛樊葛邢安齐易乔伍庞颜倪庄聂章鲁岳翟殷詹申欧耿关兰
+焦俞左柳甘祝包宁尚符舒阮柯纪梅童凌毕单季裴霍涂成苗谷盛曲翁冉骆蓝路游辛靳管柴蒙鲍华喻祁蒲房滕屈饶解牟艾尤阳时穆农司卓古吉缪简车项连芦麦
+褚娄窦戚岑景党宫费卜冷晏席卫米柏宗瞿桂全佟应臧闵苟邬边卞姬师和仇栾隋商刁沙荣巫寇桑郎甄丛仲虞敖巩明佘池查麻苑迟邝官封谈匡鞠惠荆乐冀郁胥
+南班储原栗燕楚鄢劳谌奚皮粟冼蔺楼盘满闻位厉伊仝区郜海阚花权强帅屠豆朴盖练廉禹井祖漆巴丰支卿国狄平计索宣晋相初门云容敬来扈晁芮都普阙浦戈
+伏鹿薄邸雍辜羊阿乌母裘亓修邰赫杭况那宿鲜印逯隆茹诸战慕危玉银亢嵇公哈湛宾戎勾茅利於呼居揭干但尉冶斯元束檀衣信展阴昝智幸奉植衡富尧闭由""")
+COMPOUND_SURNAMES = _ws("欧阳 司马 上官 诸葛 东方 皇甫 尉迟 公孙 慕容 长孙 宇文 司徒 令狐 夏侯 澹台 端木 西门 南宫 独孤 轩辕 百里 呼延 万俟 钟离 闻人 赫连")
+NON_NAME_CHARS = set("版图纸封面页号层栏表说明目录第张期次级型式类区栋楼室宿舍厂房段程项工计设施审核校对签章字部系统号稿底样示意总平立剖详")
 
 # 属性标签 → 类别
 TAG_RULES = [
@@ -579,11 +604,23 @@ def classify_label(s, opts=None):
     return None
 
 
+def en_label_like(t):
+    toks = [x for x in re.split(r"[\s/:：_\-.()（）]+", t.upper()) if x]
+    return bool(toks) and all(re.fullmatch(r"[A-Z0-9.]+", x) for x in toks) and \
+        all(x in EN_LABEL_WORDS or x.isdigit() for x in toks) and not all(x.isdigit() for x in toks)
+
+
 def is_non_value(t):
     n = norm_label(t)
     if not n:
         return True
     if n in FIELD_WORDS or classify_label(t):
+        return True
+    if en_label_like(t.strip()):
+        return True
+    # 模板占位符：“工程名称1”“建设单位 2”这类“标签 + 编号”
+    n2 = re.sub(r"[\d\s]+$", "", t.strip())
+    if n2 and n2 != t.strip() and (norm_label(n2) in FIELD_WORDS or classify_label(n2)):
         return True
     return False
 
@@ -591,15 +628,20 @@ def is_non_value(t):
 def name_like(p):
     p = p.strip()
     if re.fullmatch(r"[\u4e00-\u9fff][\u4e00-\u9fff·]{1,3}", p):
-        return p not in COMMON_WORDS and p not in FIELD_WORDS and not classify_label(p)
+        if p in COMMON_WORDS or p in FIELD_WORDS or classify_label(p):
+            return False
+        surname = p[0] in SURNAMES or p[:2] in COMPOUND_SURNAMES
+        if not surname and any(ch in NON_NAME_CHARS for ch in p):
+            return False      # “第一版”“图纸封面”
+        return True
     if re.fullmatch(r"[A-Za-z][A-Za-z.' \-]{1,29}", p):
-        return p.upper().replace(" ", "") not in EN_NONNAMES and not classify_label(p)
+        return p.upper().replace(" ", "") not in EN_NONNAMES and not en_label_like(p) and not classify_label(p)
     return False
 
 
 def value_terms(cat, text):
     out = []
-    text = text.strip()
+    text = text.replace("\\P", "\n").strip()     # 多行属性里残留的 MTEXT 换行码
     if not text:
         return out
     for line in text.split("\n"):
@@ -1252,14 +1294,15 @@ def scan_doc(doc, det, findings, fname, analysis):
                     break
                 if c in codes:
                     v = dxf_unescape(P[pi][1])
-                    v = text_plain(v) if t in ("TEXT", "ATTRIB", "ATTDEF") else mtext_plain(v)
+                    v = text_plain(v) if t in ("TEXT", "ATTRIB", "ATTDEF") and "\\P" not in v and "{\\" not in v else mtext_plain(v)
                     for term, cat, rule in det.detect_text(v, labels=(sec != "OBJECTS" or t in ("TABLECONTENT", "FIELD"))):
                         add(term, cat, rule, r)
         if t in ("ATTRIB", "ATTDEF"):
             tag = (doc.rget(r, 2) or "").strip()
             cat = classify_tag(tag)
             if cat and o.get(CAT_OPTION.get(cat, ""), False):
-                val = text_plain(dxf_unescape(doc.rget(r, 1) or ""))
+                val = dxf_unescape(doc.rget(r, 1) or "")
+                val = mtext_plain(val) if ("\\P" in val or "{\\" in val) else text_plain(val)
                 for term in value_terms(cat, val):
                     add(term, cat, "属性标签 " + tag, r)
         # 扩展数据中的字符串
@@ -1565,7 +1608,15 @@ def mapping_regex(mapping):
     if not terms:
         return None, {}
     terms.sort(key=len, reverse=True)
-    rx = re.compile("|".join(re.escape(t) for t in terms))
+
+    def pat(t):
+        e = re.escape(t)
+        if re.match(r"[A-Za-z0-9]", t):
+            e = r"(?<![A-Za-z0-9])" + e
+        if re.search(r"[A-Za-z0-9]$", t):
+            e = e + r"(?![A-Za-z0-9])"
+        return e
+    rx = re.compile("|".join(pat(t) for t in terms))
     rep = {t: mapping[t]["replace"] for t in terms}
     return rx, rep
 
@@ -1575,6 +1626,7 @@ def mapping_regex(mapping):
 # =====================================================================
 
 FIXED_JULIAN = "2451544.5"   # 2000-01-01 00:00
+RESERVED_NAMES = set("BYLAYER BYBLOCK CONTINUOUS STANDARD 0 DEFPOINTS *MODEL_SPACE *PAPER_SPACE MODEL ANNOTATIVE".split())
 
 
 def apply_doc(doc, mapping, cfg, analysis):
@@ -1708,6 +1760,10 @@ def apply_doc(doc, mapping, cfg, analysis):
                 continue
             if pi in mgroup or not is_string_code(c):
                 continue
+            if t in ("ATTRIB", "ATTDEF") and c == 2 and not inx:
+                continue          # 属性标签是字段名，改了会让属性提取、图签插件对不上
+            if v.strip().upper() in RESERVED_NAMES:
+                continue
             new, why = v, "敏感词替换"
             if dwgprops and (c in (2, 3, 4, 6, 7, 8) or 300 <= c <= 309) and v:
                 new, why = "", "清除文件属性"
@@ -1776,7 +1832,19 @@ def apply_doc(doc, mapping, cfg, analysis):
 # 校验：几何指纹 + 残留扫描
 # =====================================================================
 
-def geometry_fingerprints(doc):
+def _num_key(c, v):
+    v = v.strip()
+    try:
+        f = float(v)
+    except ValueError:
+        return "%d=%s;" % (c, v)
+    if f == int(f) and abs(f) < 1e15:
+        return "%d=%d;" % (c, int(f))
+    return "%d=%.9g;" % (c, f)
+
+
+def geometry_fingerprints(doc, numeric=False):
+    """numeric=True：数值按 9 位有效数字比较（用于 DWG 回读，不同转换器的小数写法不同）。"""
     out = []
     for r in doc.recs:
         if r.deleted or r.section not in ("ENTITIES", "BLOCKS"):
@@ -1788,7 +1856,12 @@ def geometry_fingerprints(doc):
             if c == 1001:
                 break
             if is_numeric_code(c):
-                h.update(("%d=%s;" % (c, v.strip())).encode("ascii", "replace"))
+                if numeric:
+                    if c in (5, 105, 330, 360) or 320 <= c <= 369 or 390 <= c <= 399 or 480 <= c <= 481:
+                        continue  # 句柄、软/硬指针：转换器会重排
+                    h.update(_num_key(c, v).encode("ascii", "replace"))
+                else:
+                    h.update(("%d=%s;" % (c, v.strip())).encode("ascii", "replace"))
         out.append((r.type, h.hexdigest(), doc.rget(r, 5)))
     return out
 
@@ -1867,10 +1940,30 @@ def verify(src_doc, out_path, mapping):
 # DWG 转换
 # =====================================================================
 
+DWG_VERSIONS = OrderedDict([
+    ("AC1032", "ACAD2018"), ("AC1027", "ACAD2013"), ("AC1024", "ACAD2010"), ("AC1021", "ACAD2007"),
+    ("AC1018", "ACAD2004"), ("AC1015", "ACAD2000"), ("AC1014", "ACAD14"), ("AC1012", "ACAD13"),
+])
+DWG_LABEL = {"ACAD2018": "2018", "ACAD2013": "2013", "ACAD2010": "2010", "ACAD2007": "2007",
+             "ACAD2004": "2004", "ACAD2000": "2000", "ACAD14": "R14", "ACAD13": "R13"}
+
+
+def dwg_version_of(path):
+    """读 DWG 文件头 6 个字节，返回 ODA 用的版本名，例如 AC1021 → ACAD2007；认不出返回 None。"""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(6).decode("ascii", "replace")
+    except OSError:
+        return None
+    return DWG_VERSIONS.get(head)
+
+
 def find_oda(cfg=None):
     cands = []
     p = (cfg or {}).get("oda_converter") or os.environ.get("ODA_CONVERTER")
     if p:
+        if os.path.isdir(p) and p.endswith(".app"):
+            p = os.path.join(p, "Contents", "MacOS", "ODAFileConverter")
         cands.append(p)
     cands += ["/Applications/ODAFileConverter.app/Contents/MacOS/ODAFileConverter"]
     cands += sorted(glob.glob("/Applications/ODAFileConverter*.app/Contents/MacOS/ODAFileConverter"), reverse=True)
@@ -1887,6 +1980,59 @@ def find_oda(cfg=None):
     return None
 
 
+def _exe(name):
+    return name + (".exe" if os.name == "nt" else "")
+
+
+def find_libredwg(cfg=None):
+    """返回 {"dwg2dxf": 路径, "dxf2dwg": 路径或 None}；找不到 dwg2dxf 返回 None。
+    查找顺序：配置 libredwg_dir → 环境变量 LIBREDWG_DIR → 打包内置（libredwg/ 子目录）→ 系统 PATH。"""
+    dirs = []
+    for d in ((cfg or {}).get("libredwg_dir"), os.environ.get("LIBREDWG_DIR")):
+        if d:
+            dirs += [d, os.path.join(d, "bin")]
+    bases = []
+    if getattr(sys, "_MEIPASS", None):
+        bases.append(sys._MEIPASS)
+    if getattr(sys, "frozen", False):
+        ex = os.path.dirname(os.path.abspath(sys.executable))
+        bases += [ex, os.path.join(ex, "..", "Resources"), os.path.join(ex, "..", "Frameworks")]
+    here = os.path.dirname(os.path.abspath(__file__))
+    bases += [here, os.path.dirname(here)]
+    for bs in bases:
+        dirs += [os.path.join(bs, "libredwg"), os.path.join(bs, "libredwg", "bin")]
+    for d in dirs:
+        r = os.path.join(d, _exe("dwg2dxf"))
+        if os.path.isfile(r):
+            w = os.path.join(d, _exe("dxf2dwg"))
+            return {"dwg2dxf": r, "dxf2dwg": w if os.path.isfile(w) else None, "dir": d}
+    r = shutil.which("dwg2dxf")
+    if r:
+        return {"dwg2dxf": r, "dxf2dwg": shutil.which("dxf2dwg"), "dir": os.path.dirname(r)}
+    return None
+
+
+def dwg_tools(cfg=None):
+    """当前可用的 DWG 转换器，按 dwg_converter 设置排好优先级。"""
+    pref = ((cfg or {}).get("dwg_converter") or "auto").lower()
+    oda = find_oda(cfg) if pref in ("auto", "oda") else None
+    lib = find_libredwg(cfg) if pref in ("auto", "libredwg") else None
+    return {"oda": oda, "libredwg": lib,
+            "read": "oda" if oda else ("libredwg" if lib else None),
+            "write": "oda" if oda else ("libredwg" if lib and lib.get("dxf2dwg") else None)}
+
+
+def _run(cmd, timeout=900):
+    kw = {}
+    if os.name == "nt":
+        kw["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, **kw)
+
+
+def _tail(p):
+    return (p.stdout.decode("utf-8", "ignore")[-300:] + " " + p.stderr.decode("utf-8", "ignore")[-300:]).strip()
+
+
 def oda_convert(exe, src, dst_dir, out_type, version="ACAD2018"):
     tin = tempfile.mkdtemp(prefix="oda_in_")
     try:
@@ -1894,29 +2040,173 @@ def oda_convert(exe, src, dst_dir, out_type, version="ACAD2018"):
         os.makedirs(dst_dir, exist_ok=True)
         ext = os.path.splitext(src)[1]
         cmd = [exe, tin, dst_dir, version, out_type, "0", "1", "*" + ext]
-        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=900)
+        p = _run(cmd)
         stem = os.path.splitext(os.path.basename(src))[0]
         for f in os.listdir(dst_dir):
             if os.path.splitext(f)[0] == stem and os.path.splitext(f)[1].lower() == "." + out_type.lower():
                 return os.path.join(dst_dir, f)
-        raise RuntimeError("ODA File Converter 未生成文件。输出：%s %s" % (
-            p.stdout.decode("utf-8", "ignore")[-300:], p.stderr.decode("utf-8", "ignore")[-300:]))
+        raise RuntimeError("ODA File Converter 未生成文件。输出：%s" % _tail(p))
     finally:
         shutil.rmtree(tin, ignore_errors=True)
 
 
-def dwg_to_dxf(src, work, cfg):
-    exe = find_oda(cfg)
-    if exe:
-        return oda_convert(exe, src, tempfile.mkdtemp(prefix="dxf_", dir=work), "DXF", cfg.get("dwg_version") or "ACAD2018"), "oda"
-    d2d = shutil.which("dwg2dxf")
-    if d2d:
-        out = os.path.join(tempfile.mkdtemp(prefix="dxf_", dir=work), os.path.splitext(os.path.basename(src))[0] + ".dxf")
-        subprocess.run([d2d, "-y", "-o", out, src], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=900)
-        if os.path.isfile(out):
-            return out, "libredwg"
-    raise RuntimeError("处理 DWG 需要安装免费的 ODA File Converter（https://www.opendesign.com/guestfiles/oda_file_converter），"
-                       "或先在 CAD 里把 DWG 另存为 DXF")
+def libredwg_convert(tools, src, dst_dir, out_type):
+    os.makedirs(dst_dir, exist_ok=True)
+    stem = os.path.splitext(os.path.basename(src))[0]
+    if out_type.upper() == "DXF":
+        out = os.path.join(dst_dir, stem + ".dxf")
+        p = _run([tools["dwg2dxf"], "-y", "-o", out, src])
+    else:
+        if not tools.get("dxf2dwg"):
+            raise RuntimeError("LibreDWG 缺少 dxf2dwg，无法写 DWG")
+        out = os.path.join(dst_dir, stem + ".dwg")
+        p = _run([tools["dxf2dwg"], "-y", "--as", "r2000", "-o", out, src])
+    if os.path.isfile(out) and os.path.getsize(out) > 0:
+        return out
+    raise RuntimeError("LibreDWG 转换失败：%s" % _tail(p))
+
+
+def dwg_to_dxf(src, work, cfg, tools=None):
+    tools = tools or dwg_tools(cfg)
+    dst = tempfile.mkdtemp(prefix="dxf_", dir=work)
+    errs = []
+    if tools["oda"]:
+        try:
+            return oda_convert(tools["oda"], src, dst, "DXF", "ACAD2018"), "oda"
+        except Exception as e:
+            errs.append(str(e))
+    if tools["libredwg"]:
+        try:
+            return libredwg_convert(tools["libredwg"], src, dst, "DXF"), "libredwg"
+        except Exception as e:
+            errs.append(str(e))
+    if errs:
+        raise RuntimeError("DWG 读取失败：" + "；".join(errs))
+    raise RuntimeError("处理 DWG 需要 DWG 转换器：请安装免费的 ODA File Converter"
+                       "（https://www.opendesign.com/guestfiles/oda_file_converter），或先在 CAD 里把 DWG 另存为 DXF")
+
+
+def dxf_to_dwg(src_dxf, work, cfg, src_version=None, tools=None):
+    """返回 (dwg 路径, 转换器名, 实际版本, 提示列表)。"""
+    tools = tools or dwg_tools(cfg)
+    notes = []
+    want = (cfg.get("dwg_version") or "same")
+    if want == "same":
+        want = src_version if src_version in DWG_LABEL and src_version not in ("ACAD14", "ACAD13") else "ACAD2018"
+    dst = tempfile.mkdtemp(prefix="dwg_", dir=work)
+    if tools["oda"]:
+        try:
+            return oda_convert(tools["oda"], src_dxf, dst, "DWG", want), "oda", want, notes
+        except Exception as e:
+            notes.append("ODA 写 DWG 失败（%s），改用 LibreDWG" % e)
+    if tools["libredwg"] and tools["libredwg"].get("dxf2dwg"):
+        out = libredwg_convert(tools["libredwg"], src_dxf, dst, "DWG")
+        notes.append("未使用 ODA，已用内置 LibreDWG 写出 DWG 2000 格式（实验功能）。正式交付前请在 CAD 里打开核对一遍；"
+                     "安装 ODA File Converter 后可输出与原图相同版本的 DWG")
+        return out, "libredwg", "ACAD2000", notes
+    raise RuntimeError("no-dwg-writer")
+
+
+def _numeric_pairs(doc, r):
+    out = []
+    for pi in doc.rpairs(r):
+        c, v = doc.pairs[pi][0], doc.pairs[pi][1]
+        if c == 1001:
+            break
+        if is_numeric_code(c) and not (c in (5, 105, 330, 360) or 320 <= c <= 369 or 390 <= c <= 399 or 480 <= c <= 481):
+            out.append(_num_key(c, v))
+    return out
+
+
+def numeric_diff_detail(ref_doc, doc, limit=6):
+    """按句柄配对，统计哪类图元的哪个组码不同，例如“MTEXT 组码 46 新增×800”。"""
+    def index(d):
+        m = {}
+        for r in d.recs:
+            if not r.deleted and r.section in ("ENTITIES", "BLOCKS"):
+                h = (d.rget(r, 5) or "").strip()
+                if h:
+                    m[h] = r
+        return m
+    ia, ib = index(ref_doc), index(doc)
+    tally = defaultdict(int)
+    nent = 0
+    for h, ra in ia.items():
+        rb = ib.get(h)
+        if rb is None or rb.type != ra.type:
+            continue
+        ka, kb = _numeric_pairs(ref_doc, ra), _numeric_pairs(doc, rb)
+        if ka == kb:
+            continue
+        nent += 1
+        ca = defaultdict(int)
+        cb = defaultdict(int)
+        for k in ka:
+            ca[k] += 1
+        for k in kb:
+            cb[k] += 1
+        codes_a = set(k.split("=")[0] for k in ka)
+        codes_b = set(k.split("=")[0] for k in kb)
+        seen = set()
+        for k in set(ca) | set(cb):
+            if ca[k] == cb[k]:
+                continue
+            c = k.split("=")[0]
+            kind = "新增" if c not in codes_a else ("缺失" if c not in codes_b else "数值变化")
+            key = "%s 组码 %s %s" % (ra.type, c, kind)
+            if key not in seen:
+                seen.add(key)
+                tally[key] += 1
+    return ["%s×%d" % kv for kv in sorted(tally.items(), key=lambda x: -x[1])[:limit]], nent
+
+
+def verify_dwg(dwg_path, ref_doc, mapping, cfg, work, tools=None):
+    """把写出的 DWG 再转回 DXF，核对能否打开、图元数量、几何数值和残留。"""
+    res = {"ok": False, "readback": "", "count_ok": False, "geometry_ok": False, "residual": []}
+    try:
+        back, conv = dwg_to_dxf(dwg_path, work, cfg, tools)
+        doc = DxfDoc(back)
+    except Exception as e:
+        res["readback"] = "写出的 DWG 读不回来：%s" % e
+        return res
+    a = geometry_fingerprints(ref_doc, numeric=True)
+    b = geometry_fingerprints(doc, numeric=True)
+    res["count_ok"] = len(a) == len(b)
+    if res["count_ok"]:
+        sa, sb = sorted(x[:2] for x in a), sorted(x[:2] for x in b)
+        nd = sum(1 for x, y in zip(sa, sb) if x != y)
+        res["geometry_ok"] = nd == 0
+        if nd == 0:
+            res["readback"] = "回读 %d 个图元，数量和几何数值一致" % len(a)
+        else:
+            det, nent = numeric_diff_detail(ref_doc, doc)
+            res["diff_detail"] = det
+            align = det and all(re.match(r"(ATTDEF|ATTRIB|TEXT) 组码 (10|20|30) ", d) for d in det)
+            res["readback"] = "回读 %d 个图元，数量一致；%d 个图元的数值有差异：%s%s" % (
+                len(a), nent or nd, "，".join(det[:5]) or "（无法按句柄配对）",
+                "（文字改短/改长后，CAD 按对齐方式重算了起点，属正常）" if align else "")
+    else:
+        ta, tb = defaultdict(int), defaultdict(int)
+        for x in a:
+            ta[x[0]] += 1
+        for x in b:
+            tb[x[0]] += 1
+        diff = ["%s %d→%d" % (k, ta[k], tb[k]) for k in sorted(set(ta) | set(tb)) if ta[k] != tb[k]][:6]
+        res["readback"] = "回读图元数量不一致：原 %d / DWG %d（%s）" % (len(a), len(b), "，".join(diff))
+    rx, _ = mapping_regex(mapping)
+    if rx is not None:
+        hits = defaultdict(int)
+        for r in doc.recs:
+            if r.section in ("CLASSES",):
+                continue
+            for pi in doc.rpairs(r):
+                c, v = doc.pairs[pi][0], doc.pairs[pi][1]
+                if is_string_code(c):
+                    for m in rx.finditer(dxf_unescape(v)):
+                        hits[(m.group(0), r.type)] += 1
+        res["residual"] = [{"term": t, "type": ty, "count": n} for (t, ty), n in hits.items()]
+    res["ok"] = res["count_ok"] and not res["residual"]
+    return res
 
 
 # =====================================================================
@@ -1955,16 +2245,19 @@ def run_pipeline(inputs, out_dir, cfg, report_dir=None, dry_run=False, decisions
     if not files:
         raise RuntimeError("没有找到 DXF / DWG 文件")
     work = tempfile.mkdtemp(prefix="cad_desens_")
+    tools = dwg_tools(cfg) if any(os.path.splitext(f[0])[1].lower() == ".dwg" for f in files) or \
+        (cfg.get("output_format") or "").lower() == "dwg" else None
     det = Detector(cfg)
     findings = Findings()
     jobs = []
     for src, rel in files:
         job = {"src": src, "rel": rel, "ext": os.path.splitext(src)[1].lower(), "dxf": None, "error": None,
-               "analysis": {}, "converter": None}
+               "analysis": {}, "converter": None, "dwg_version": None}
         try:
             if job["ext"] == ".dwg":
-                log("转换 DWG → DXF：%s" % rel)
-                job["dxf"], job["converter"] = dwg_to_dxf(src, work, cfg)
+                job["dwg_version"] = dwg_version_of(src)
+                log("转换 DWG → DXF：%s（DWG %s）" % (rel, DWG_LABEL.get(job["dwg_version"], "未知版本")))
+                job["dxf"], job["converter"] = dwg_to_dxf(src, work, cfg, tools)
             else:
                 job["dxf"] = src
             log("扫描：%s" % rel)
@@ -1995,6 +2288,7 @@ def run_pipeline(inputs, out_dir, cfg, report_dir=None, dry_run=False, decisions
                 changes, removed = apply_doc(doc, mapping, cfg, job["analysis"])
                 job["changes"] = changes
                 job["removed"] = removed
+                job["notes"] = []
                 rel_dir, base = os.path.split(job["rel"])
                 stem = os.path.splitext(base)[0] + (cfg.get("output_suffix") or "_脱敏")
                 want_dwg = (fmt == "dwg") or (fmt == "same" and job["ext"] == ".dwg")
@@ -2003,14 +2297,36 @@ def run_pipeline(inputs, out_dir, cfg, report_dir=None, dry_run=False, decisions
                 tmp_dxf = os.path.join(tempfile.mkdtemp(dir=work), stem + ".dxf")
                 doc.save(tmp_dxf)
                 job["verify"] = verify(doc, tmp_dxf, mapping)
-                exe = find_oda(cfg) if want_dwg else None
-                if want_dwg and not exe:
-                    job["removed"].append("未找到 ODA File Converter，无法输出 DWG，已改为输出 DXF")
+                if want_dwg and not (tools and tools["write"]):
+                    job["notes"].append("没有可用的 DWG 转换器（ODA File Converter / LibreDWG），无法输出 DWG，已改为输出 DXF")
                     want_dwg = False
                 if want_dwg:
-                    got = oda_convert(exe, tmp_dxf, tempfile.mkdtemp(dir=work), "DWG", cfg.get("dwg_version") or "ACAD2018")
+                    try:
+                        got, conv, ver, notes = dxf_to_dwg(tmp_dxf, work, cfg, job["dwg_version"], tools)
+                    except Exception as e:
+                        got = None
+                        job["notes"].append("写 DWG 失败（%s），已改为输出 DXF" % e)
+                if want_dwg and got:
+                    job["notes"].extend(notes)
+                    job["out_converter"], job["out_version"] = conv, ver
+                    log("  写出 DWG %s（%s），回读核对中…" % (DWG_LABEL.get(ver, ver), "ODA" if conv == "oda" else "LibreDWG"))
+                    dv = verify_dwg(got, DxfDoc(tmp_dxf), mapping, cfg, work, tools)
+                    job["verify"]["dwg"] = dv
+                    if dv["residual"]:
+                        job["verify"]["residual"] = job["verify"]["residual"] + dv["residual"]
+                    if not dv["ok"]:
+                        job["verify"]["ok"] = False
+                        if not dv["count_ok"]:
+                            job["verify"]["geometry_ok"] = False
+                            job["verify"]["geometry"] = dv["readback"]
                     final = os.path.join(tgt_dir, stem + ".dwg")
                     shutil.copy2(got, final)
+                    if conv == "libredwg" and not dv["ok"]:
+                        # LibreDWG 写坏了：同时留一份 DXF，保证一定有可用结果
+                        bak = os.path.join(tgt_dir, stem + ".dxf")
+                        shutil.copy2(tmp_dxf, bak)
+                        job["extra_outputs"] = [bak]
+                        job["notes"].append("DWG 回读核对未通过（%s），已在旁边另存一份同名 DXF 作为备用" % dv["readback"])
                 else:
                     final = os.path.join(tgt_dir, stem + ".dxf")
                     shutil.copy2(tmp_dxf, final)
@@ -2099,6 +2415,14 @@ def render_report_html(result):
             notes.append("光栅图片引用 %d 个（路径已去除；外发时不要附带公章/签名图片文件）" % a["images"])
         if a.get("sig_blocks"):
             notes.append("签名/印章类图块：%s" % E("、".join(dxf_unescape(x) for x in a["sig_blocks"][:10])))
+        dv = (v or {}).get("dwg")
+        if dv:
+            notes.append(("<span class='good'>✓ DWG 回读：%s</span>" if dv["ok"] else "<span class='bad'>✗ DWG 回读：%s</span>") % E(dv["readback"]))
+        if j.get("out_version"):
+            notes.append("输出 DWG %s（%s 写出）" % (E(DWG_LABEL.get(j["out_version"], j["out_version"])),
+                                              "ODA File Converter" if j.get("out_converter") == "oda" else "LibreDWG"))
+        for nt in j.get("notes", []):
+            notes.append("<span class='warn'>%s</span>" % E(nt))
         for rm in j.get("removed", [])[:12]:
             notes.append("已删除：" + E(rm))
         n_changes = len(j.get("changes", []))
@@ -2177,7 +2501,7 @@ tr.off td{color:#aaa}.tbl{max-height:520px;overflow:auto;border:1px solid var(--
 <div><h3 class="mut">白名单（这些词永远不替换）</h3><textarea id="wl"></textarea></div></div>
 <div class="bar" style="margin-top:12px"><span class="mut">输出格式</span>
 <select id="fmt"><option value="same">与原文件相同</option><option value="dxf">DXF</option><option value="dwg">DWG</option></select>
-<span class="mut">DWG 版本</span><select id="ver"><option>ACAD2018</option><option>ACAD2013</option><option>ACAD2010</option><option>ACAD2007</option><option>ACAD2004</option><option>ACAD2000</option></select>
+<span class="mut">DWG 版本</span><select id="ver"><option value="same">与原图相同</option><option>ACAD2018</option><option>ACAD2013</option><option>ACAD2010</option><option>ACAD2007</option><option>ACAD2004</option><option>ACAD2000</option></select>
 <span style="flex:1"></span><button id="bscan">扫描预览</button></div>
 <div id="log" style="margin-top:12px"></div></div>
 
@@ -2200,7 +2524,7 @@ $('wl').value=WL.join('\n');
  let h='';for(const k in g){h+='<div><h3>'+k+'</h3>'+g[k].map(o=>'<label class="o"><input type="checkbox" id="op_'+o[0]+'" '+(o[1]?'checked':'')+'><span>'+o[3]+'</span></label>').join('')+'</div>'}
  $('opts').innerHTML=h;
  for(const c in CATS){const op=document.createElement('option');op.value=c;op.textContent=CATS[c];$('fcat').appendChild(op)}})();
-fetch('/api/status').then(r=>r.json()).then(s=>{$('oda').innerHTML=s.oda?'DWG 转换器：已就绪':'<span style="color:#ffcf7a">未检测到 ODA File Converter，只能处理 DXF</span>'});
+fetch('/api/status').then(r=>r.json()).then(s=>{$('oda').innerHTML=s.oda?'DWG 转换器：ODA 已就绪':(s.libredwg?'<span style="color:#ffcf7a">DWG 转换器：LibreDWG（只能写 DWG 2000，建议安装 ODA）</span>':'<span style="color:#ffcf7a">未检测到 DWG 转换器，只能处理 DXF</span>')});
 const drop=$('drop');drop.onclick=()=>$('fi').click();
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('on')};drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');addFiles(e.dataTransfer.files)};
@@ -2255,7 +2579,13 @@ def run_gui(port=0, open_browser=True):
         a = j.get("analysis", {})
         notes = ["%s · %s" % (a.get("acadver", ""), a.get("encoding", ""))]
         if j.get("converter"):
-            notes.append("DWG 已用 %s 转换" % j["converter"])
+            notes.append("DWG %s 已用 %s 读取" % (DWG_LABEL.get(j.get("dwg_version"), ""), "ODA" if j["converter"] == "oda" else "LibreDWG"))
+        if j.get("out_version"):
+            notes.append("输出 DWG %s（%s）" % (DWG_LABEL.get(j["out_version"], ""), "ODA" if j.get("out_converter") == "oda" else "LibreDWG"))
+        dv = (j.get("verify") or {}).get("dwg")
+        if dv:
+            notes.append(("DWG 回读：" if dv["ok"] else "DWG 回读未通过：") + dv["readback"])
+        notes.extend(j.get("notes", []))
         if a.get("unknown"):
             notes.append("含非标准对象 %s（多为天正对象，内部文字可能处理不到）" % "、".join(
                 "%s×%d" % kv for kv in sorted(a["unknown"].items(), key=lambda x: -x[1])[:4]))
@@ -2293,7 +2623,8 @@ def run_gui(port=0, open_browser=True):
                     .replace("__WL__", json.dumps(DEFAULT_CONFIG["whitelist"], ensure_ascii=False))
                 return self._send(200, page, "text/html; charset=utf-8")
             if p == "/api/status":
-                return self._json({"oda": bool(find_oda()), "version": VERSION})
+                t = dwg_tools()
+                return self._json({"oda": bool(t["oda"]), "libredwg": bool(t["libredwg"]), "dwg": t["write"], "version": VERSION})
             m = re.match(r"^/(dl|report|dlreport)/([0-9a-f]+)$", p)
             if m:
                 s = S.data.get(m.group(2))
@@ -2401,11 +2732,14 @@ def main(argv=None):
     common(p)
     p.add_argument("-o", "--out", help="输出目录（默认：输入旁边的“脱敏输出”）")
     p.add_argument("-f", "--format", choices=["same", "dxf", "dwg"], help="输出格式")
+    p.add_argument("--dwg-version", choices=["same"] + list(DWG_LABEL)[:6], help="输出 DWG 版本（默认 same：与原图相同）")
+    p.add_argument("--converter", choices=["auto", "oda", "libredwg"], help="DWG 转换器（默认 auto：ODA 优先，LibreDWG 兜底）")
     p = sub.add_parser("scan", help="只扫描，生成报告，不修改")
     common(p)
     p = sub.add_parser("gui", help="打开图形界面")
     p.add_argument("--port", type=int, default=0)
     p.add_argument("--no-browser", action="store_true")
+    sub.add_parser("check-dwg", help="查看本机可用的 DWG 转换器")
     p = sub.add_parser("init-config", help="导出默认配置文件")
     p.add_argument("path", nargs="?", default="脱敏配置.json")
     a = ap.parse_args(argv)
@@ -2416,6 +2750,13 @@ def main(argv=None):
     if a.cmd == "gui":
         run_gui(a.port, not a.no_browser)
         return 0
+    if a.cmd == "check-dwg":
+        t = dwg_tools(load_config(None))
+        print("ODA File Converter：%s" % (t["oda"] or "未找到"))
+        lib = t["libredwg"]
+        print("LibreDWG：%s" % (("%s（写 DWG：%s）" % (lib["dwg2dxf"], lib["dxf2dwg"] or "无")) if lib else "未找到"))
+        print("读 DWG 用：%s；写 DWG 用：%s" % (t["read"] or "无", t["write"] or "无"))
+        return 0 if t["write"] else 2
     if a.cmd == "init-config":
         with open(a.path, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
@@ -2436,6 +2777,10 @@ def main(argv=None):
     else:
         if getattr(a, "format", None):
             cfg["output_format"] = a.format
+        if getattr(a, "dwg_version", None):
+            cfg["dwg_version"] = a.dwg_version
+        if getattr(a, "converter", None):
+            cfg["dwg_converter"] = a.converter
         out = a.out or os.path.join(base_dir, "脱敏输出")
         rep = a.report or os.path.join(out, "_脱敏报告(含原文,勿外发)")
         res = run_pipeline(a.inputs, out, cfg, report_dir=rep, previous_mapping=prev)

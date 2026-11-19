@@ -2,7 +2,7 @@
 
 桌面版是一个原生窗口程序，图纸只在本机处理。它支持：
 
-- 直接处理 DWG 文件：需要安装免费的 ODA File Converter。
+- DWG 进、DWG 出：装了免费的 ODA File Converter 时，按原图版本写回 DWG；没装时用安装包里自带的 LibreDWG 兜底（写出 DWG 2000）。
 - 拖入图纸就开始扫描，一屏只做一件事：扫描结果 → 脱敏 → 在访达或资源管理器中显示，想看细节再点“逐项核对”。
 - 同一个人在每批图纸里都用同一个代号（设置里可以关掉）。
 - 监视文件夹：把图纸放进去，程序会自动脱敏，结果写到「已脱敏」子文件夹。
@@ -28,7 +28,7 @@
 
 | 系统 | 操作 | 结果 |
 |---|---|---|
-| macOS | 双击 `build_mac.command` | `dist/图隐-DrawVeil-1.0.0.dmg` |
+| macOS | 双击 `build_mac.command` | `dist/图隐-DrawVeil-1.0.1.dmg` |
 | Windows | 双击 `build_win.bat` | `dist\DrawVeil\DrawVeil.exe` 和便携 zip；装了 Inno Setup 6 还会生成安装程序 |
 
 打包脚本会自动建立虚拟环境，并安装 pywebview 和 pyinstaller。仓库里推送 `v*` 标签时，GitHub Actions 会自动打出上面三种安装包（见 `.github/workflows/release.yml`）。
@@ -43,8 +43,10 @@ python3 drawveil_desktop.py --browser    # 不装 pywebview：用浏览器打开
 
 ## 三、DWG 支持
 
-到 https://www.opendesign.com/guestfiles/oda_file_converter 免费下载 ODA File Converter 并安装。
-程序会自动找到它，左下角显示绿点即为已连接。也可以在「设置 › 转换与输出」里指定路径。
+- **推荐**：到 https://www.opendesign.com/guestfiles/oda_file_converter 免费下载 ODA File Converter 并安装。程序会自动找到它，左下角显示绿点即为已连接；也可以在「设置 › 转换与输出」里点“下载 ODA”“浏览…”“检测”。
+- **兜底**：打包脚本会自动下载 GNU LibreDWG 的 `dwg2dxf` / `dxf2dwg` 放进安装包（Mac 是从源码编译，需要 Xcode 命令行工具；Windows 用官方预编译版）。没装 ODA 时，左下角显示黄点，DWG 会写成 2000 格式，并标注“建议在 CAD 里打开核对”。
+- 输出的 DWG 默认与原图同版本，也可以在设置里固定为某个版本。每张 DWG 写出后都会读回来核对图元数量和残留。
+- LibreDWG 以 GPL-3.0 授权，作为独立程序被调用，许可证和源码地址随安装包一起放在 `libredwg/` 目录里。ODA File Converter 的许可不允许随软件分发，所以需要使用者自己安装。
 
 ## 四、数据存放位置
 

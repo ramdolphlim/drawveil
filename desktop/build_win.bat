@@ -14,14 +14,17 @@ if not exist .venv %PY% -m venv .venv
 call .venv\Scripts\activate.bat
 python -m pip install -q --upgrade pip
 python -m pip install -q -r requirements.txt || (echo 依赖安装失败，请检查网络 & pause & exit /b 1)
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\fetch_libredwg.ps1 || echo （LibreDWG 没有准备好，这次打出的程序只能靠 ODA 处理 DWG）
+set EXTRA=
+if exist libredwg\dwg2dxf.exe set EXTRA=--add-data "libredwg;libredwg"
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
-pyinstaller --noconfirm --clean --windowed --name "DrawVeil" --icon assets\icon.ico --add-data "ui;ui" --paths "%ENGDIR%" --hidden-import cad_desensitize --version-file version_info.txt drawveil_desktop.py || (echo 打包失败 & pause & exit /b 1)
-powershell -NoProfile -Command "Compress-Archive -Force -Path 'dist\DrawVeil\*' -DestinationPath 'dist\图隐-DrawVeil-1.0.0-Windows.zip'"
-where iscc >nul 2>nul && (iscc /Q installer.iss && echo 已生成安装包 dist\图隐-DrawVeil-1.0.0-Setup.exe)
+pyinstaller --noconfirm --clean --windowed --name "DrawVeil" %EXTRA% --icon assets\icon.ico --add-data "ui;ui" --paths "%ENGDIR%" --hidden-import cad_desensitize --version-file version_info.txt drawveil_desktop.py || (echo 打包失败 & pause & exit /b 1)
+powershell -NoProfile -Command "Compress-Archive -Force -Path 'dist\DrawVeil\*' -DestinationPath 'dist\图隐-DrawVeil-1.0.1-Windows.zip'"
+where iscc >nul 2>nul && (iscc /Q installer.iss && echo 已生成安装包 dist\图隐-DrawVeil-1.0.1-Setup.exe)
 echo.
 echo 完成：%CD%\dist\DrawVeil\DrawVeil.exe
-echo 便携压缩包：%CD%\dist\图隐-DrawVeil-1.0.0-Windows.zip
+echo 便携压缩包：%CD%\dist\图隐-DrawVeil-1.0.1-Windows.zip
 echo 首次运行如出现“Windows 已保护你的电脑”，点“更多信息”→“仍要运行”（程序没有代码签名）。
 explorer dist
 pause

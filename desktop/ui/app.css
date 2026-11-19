@@ -152,6 +152,7 @@ body.dragging .ring { transform: scale(1.03); }
 .switch:disabled { opacity: .4; cursor: default; }
 .dot { color: var(--ok); }
 .dot.bad { color: var(--bad); }
+.dot.warn { color: var(--warn-mark); }
 details { border-bottom: 1px solid var(--line2); }
 summary { min-height: 54px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 14px; }
 summary::-webkit-details-marker { display: none; }

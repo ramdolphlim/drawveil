@@ -11,4 +11,5 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: python tests/run_tests.py
+      - run: python tests/test_dwg_flow.py
       - run: python web/build_web.py

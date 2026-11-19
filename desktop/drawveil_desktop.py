@@ -33,7 +33,7 @@ for _p in (getattr(sys, "_MEIPASS", ""), HERE, os.path.dirname(HERE)):
 import cad_desensitize as C  # noqa: E402
 
 APP_NAME = "图隐 DrawVeil"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 PLATFORM = "mac" if sys.platform == "darwin" else ("win" if os.name == "nt" else "linux")
 
 
@@ -57,6 +57,9 @@ def documents_dir():
     return d if os.path.isdir(d) else os.path.expanduser("~")
 
 
+ODA_URL = "https://www.opendesign.com/guestfiles/oda_file_converter"
+
+
 def default_settings():
     cfg = C.DEFAULT_CONFIG
     return {
@@ -67,7 +70,8 @@ def default_settings():
         "pseudonyms": dict(cfg["pseudonyms"]),
         "signature_block_pattern": cfg["signature_block_pattern"],
         "oda_converter": "",
-        "dwg_version": "ACAD2018",
+        "dwg_version": "same",            # same：与原 DWG 相同版本
+        "dwg_converter": "auto",          # auto：ODA 优先，内置 LibreDWG 兜底
         "output_format": "same",
         "output_mode": "beside",          # beside：原文件旁“脱敏输出”；fixed：统一放到 output_dir
         "output_dir": "",
@@ -182,11 +186,14 @@ class Api(object):
     # ------------------------------------------------------------ 给界面
     def get_state(self):
         oda = C.find_oda(self.settings)
+        lib = C.find_libredwg(self.settings)
         return {
             "app": APP_NAME, "version": APP_VERSION, "platform": PLATFORM,
             "settings": self.settings, "current": self.current,
             "batches": [self._batch_view(b) for b in self.batches],
             "oda": oda or "", "odaVersion": self._oda_version(oda),
+            "libredwg": bool(lib and lib.get("dxf2dwg")), "libredwgRead": bool(lib),
+            "odaUrl": ODA_URL,
             "options": [list(x) for x in C.OPTION_INFO], "cats": C.CAT_NAMES,
             "defaults": default_settings(),
         }
@@ -333,6 +340,9 @@ class Api(object):
     def reveal(self, path):
         return reveal(path)
 
+    def open_oda_download(self):
+        return open_file(ODA_URL)
+
     def open_path(self, path):
         return open_file(path)
 
@@ -342,7 +352,8 @@ class Api(object):
         return C.merge_config({
             "options": s["options"], "keywords": s.get("keywords") or [], "whitelist": s.get("whitelist") or [],
             "pseudonyms": s.get("pseudonyms") or {}, "signature_block_pattern": s.get("signature_block_pattern"),
-            "oda_converter": s.get("oda_converter") or "", "dwg_version": s.get("dwg_version") or "ACAD2018",
+            "oda_converter": s.get("oda_converter") or "", "dwg_version": s.get("dwg_version") or "same",
+            "dwg_converter": s.get("dwg_converter") or "auto",
             "output_format": s.get("output_format") or "same", "output_suffix": s.get("output_suffix") or "_脱敏",
         })
 
@@ -458,7 +469,15 @@ class Api(object):
         a = j.get("analysis", {})
         out = []
         if j.get("converter"):
-            out.append("DWG 已用 %s 转换" % ("ODA File Converter" if j["converter"] == "oda" else j["converter"]))
+            out.append("DWG %s 已用 %s 读取" % (C.DWG_LABEL.get(j.get("dwg_version"), ""),
+                                           "ODA File Converter" if j["converter"] == "oda" else "内置 LibreDWG"))
+        if j.get("out_version"):
+            out.append("输出 DWG %s（%s）" % (C.DWG_LABEL.get(j["out_version"], ""),
+                                          "ODA File Converter" if j.get("out_converter") == "oda" else "内置 LibreDWG"))
+        dv = (j.get("verify") or {}).get("dwg")
+        if dv:
+            out.append(("DWG 回读：" if dv["ok"] else "DWG 回读未通过：") + dv["readback"])
+        out.extend(j.get("notes", []))
         if a.get("unknown"):
             out.append("含非标准对象 %s（多为天正对象，内部文字可能处理不到）" % "、".join(
                 "%s×%d" % kv for kv in sorted(a["unknown"].items(), key=lambda x: -x[1])[:4]))
@@ -513,6 +532,9 @@ class Api(object):
                     dest = os.path.join(dest_dir, os.path.basename(j["output"]))
                     shutil.move(j["output"], dest)
                     outs.append(dest)
+                    for extra in j.get("extra_outputs") or []:
+                        if os.path.isfile(extra):
+                            shutil.move(extra, os.path.join(dest_dir, os.path.basename(extra)))
                 else:
                     dest = ""
                 v = j.get("verify") or {}
@@ -520,7 +542,9 @@ class Api(object):
                         "changes": len(j.get("changes", [])), "removed": j.get("removed", []),
                         "geometry": v.get("geometry", ""), "geometry_ok": v.get("geometry_ok", False),
                         "residual": [x["term"] for x in v.get("residual", [])][:10],
-                        "binary_residual": [x["term"] for x in v.get("binary_residual", [])][:10]}
+                        "binary_residual": [x["term"] for x in v.get("binary_residual", [])][:10],
+                        "notes": j.get("notes", []), "dwg": (v.get("dwg") or {}).get("readback", ""),
+                        "out_version": C.DWG_LABEL.get(j.get("out_version"), ""), "out_converter": j.get("out_converter")}
                 if f is not None:
                     f["output"] = dest
                     f["changes"] = info["changes"]
@@ -530,8 +554,10 @@ class Api(object):
                         f["status"], f["note"] = "warn", "校验未通过，请看报告"
                     elif info["binary_residual"]:
                         f["status"], f["note"] = "warn", "天正/代理对象里仍有：" + "、".join(info["binary_residual"][:3])
+                    elif info["out_converter"] == "libredwg":
+                        f["status"], f["note"] = "warn", "DWG 2000（内置转换器写出），建议在 CAD 里打开核对"
                     else:
-                        f["status"], f["note"] = "done", "校验通过"
+                        f["status"], f["note"] = "done", "校验通过" + ("，DWG " + info["out_version"] if info["out_version"] else "")
                 j["_info"] = info
             # 代号库：合并保存到批次
             old = dict((e["term"], e) for e in (b.get("mapping") or []))

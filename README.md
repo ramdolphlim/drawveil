@@ -38,7 +38,7 @@
 |---|---|---|---|
 | 怎么用 | 打开 [drawveil.limch.cc](https://drawveil.limch.cc) | [Releases](https://github.com/peter804762649-ux/drawveil/releases) 下载安装 | `python3 cad_desensitize.py run 图纸/` |
 | DXF | ✓ | ✓ | ✓ |
-| DWG | 先另存为 DXF | ✓（需装免费的 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)） | ✓（同左） |
+| DWG | 先另存为 DXF | ✓ DWG 进、DWG 出，保持原版本（推荐装免费的 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)；没装时用内置 LibreDWG 写出 DWG 2000） | ✓（需装 ODA 或 LibreDWG） |
 | 批量 / 文件夹 | ✓ | ✓，还能监视文件夹自动处理 | ✓ |
 | 图纸去哪了 | 只在你的浏览器里处理，不上传 | 只在本机处理 | 只在本机处理 |
 
@@ -76,6 +76,8 @@ python3 desktop/drawveil_desktop.py --browser  # 不装 pywebview，用浏览器
 
 [MIT](LICENSE)
 
+桌面版安装包里附带了 [GNU LibreDWG](https://www.gnu.org/software/libredwg/) 的 `dwg2dxf` / `dxf2dwg` 两个独立程序（GPL-3.0），只在没装 ODA File Converter 时用来兜底读写 DWG；其许可证和源码地址放在程序的 `libredwg/` 目录里。
+
 ---
 
 <a id="english"></a>
@@ -85,7 +87,7 @@ python3 desktop/drawveil_desktop.py --browser  # 不装 pywebview，用浏览器
 **DrawVeil** removes sensitive information from CAD drawings (DWG / DXF) before you share them: people's names in title blocks and sign-off tables, company and project names (Chinese and English), phone numbers, emails, ID and business-license numbers, handwritten signature strokes, company logos and file metadata. Everything is replaced with consistent placeholders (人员01, 单位01, …), while geometry, dimensions and annotations stay untouched. Each output is verified entity by entity, and the tool checks that no original text remains.
 
 - **Web**: <https://drawveil.limch.cc>. It runs fully in your browser via Pyodide, and drawings are never uploaded. DXF only.
-- **Desktop** (macOS / Windows): download from [Releases](https://github.com/peter804762649-ux/drawveil/releases). It handles DWG through the free ODA File Converter and can watch a folder.
+- **Desktop** (macOS / Windows): download from [Releases](https://github.com/peter804762649-ux/drawveil/releases). DWG in, DWG out at the original version via the free ODA File Converter; without ODA it falls back to the bundled LibreDWG (writes DWG 2000). Every DWG written is read back and checked. It can also watch a folder.
 - **CLI**: `python3 cad_desensitize.py run drawings/` (Python 3.8+, standard library only).
 
-The UI and docs are in Chinese. Licensed under MIT.
+The UI and docs are in Chinese. Licensed under MIT. The desktop installers bundle the `dwg2dxf` / `dxf2dwg` programs from [GNU LibreDWG](https://www.gnu.org/software/libredwg/) as separate executables under GPL-3.0; its license and source link are included in the `libredwg/` folder of the app.

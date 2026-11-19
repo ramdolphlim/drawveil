@@ -85,6 +85,34 @@ try:
               "请与当地供电局联系", "图号：结施-03", "KL1(2) 300x600", "±0.000相当于绝对标高12.350",
               "详见国标图集12J201，中国建筑标准设计研究院出版", "2023-05-12", "Φ8@100/200(2)"):
         check(not d.detect_text(t), t)
+    print("5. 真实图纸里遇到过的误报（中英双语图签、模板占位符、非人名）")
+    for t in ("BY", "VERIFIED  BY", "DESIGNED BY", "PROJECT SUPERVISOR", "SUB-PROJECT NAME", "SITE",
+              "工程名称1", "建设单位1", "项目名称 2", "建设地点1"):
+        check(C.is_non_value(t), "不是值：" + t)
+    for t in ("宁波某某电气有限公司", "John Smith"):
+        check(not C.is_non_value(t), "仍是值：" + t)
+    for t in ("第一版", "图纸封面"):
+        check(not C.name_like(t), "不是人名：" + t)
+    for t in ("赵一鸣", "林岚", "欧阳明"):
+        check(C.name_like(t), "是人名：" + t)
+
+    print("6. 替换边界与结构字段")
+    rx, rep = C.mapping_regex({"BY": {"enabled": True, "replace": "X"}, "2#楼": {"enabled": True, "replace": "P"}})
+    check(rx.sub(lambda m: rep[m.group(0)], "BYLAYER BY 12#楼 2#楼") == "BYLAYER X 12#楼 P", "英文/数字词按整词匹配")
+    blk = os.path.join(tmp, "attr.dxf")
+    with open(blk, "w", encoding="utf-8") as f:
+        f.write("  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1021\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n"
+                "  0\nATTRIB\n  5\nA1\n  8\n0\n 10\n0\n 20\n0\n 40\n2.5\n  1\n张三丰\n  2\n张三丰\n 70\n0\n"
+                "  0\nMLINE\n  5\nA2\n  8\n0\n  6\nBYLAYER\n"
+                "  0\nENDSEC\n  0\nEOF\n")
+    doc = C.DxfDoc(blk)
+    mp = {"张三丰": {"enabled": True, "replace": "人员01", "cat": "person"},
+          "BY": {"enabled": True, "replace": "人员02", "cat": "person"}}
+    C.apply_doc(doc, mp, C.merge_config(None), {})
+    vals = [(c, v) for c, v, *_ in doc.pairs]
+    check((1, "人员01") in vals, "属性值已替换")
+    check((2, "张三丰") in vals, "属性标签（组码 2）不改")
+    check((6, "BYLAYER") in vals, "BYLAYER 不改")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -2,11 +2,11 @@
 [Setup]
 AppId={{6C1B3E2A-8D4F-4E57-9A11-D7A3E0C5F201}
 AppName=图隐 DrawVeil
-AppVersion=1.0.0
+AppVersion=1.0.1
 DefaultDirName={autopf}\DrawVeil
 DefaultGroupName=图隐 DrawVeil
 OutputDir=dist
-OutputBaseFilename=图隐-DrawVeil-1.0.0-Setup
+OutputBaseFilename=图隐-DrawVeil-1.0.1-Setup
 SetupIconFile=assets\icon.ico
 UninstallDisplayIcon={app}\DrawVeil.exe
 Compression=lzma2

@@ -106,7 +106,7 @@
     if (S.view === 'drop') {
       const p = presetOf(s.options), pn = (PRESETS.find(x => x[0] === p) || [0, '自定义规则'])[1];
       f.innerHTML = '<button type="button" data-set="1">' + esc(pn) + '</button>' + sep + '<button type="button" data-set="1">' + esc(outLabel()) + '</button>' + sep +
-        '<button type="button" data-set="1">' + (S.st.oda ? '<span class="dot">●</span> DWG 可用' : '<span class="dot bad">●</span> DWG 需要 ODA 转换器') + '</button>' + sep +
+        '<button type="button" data-set="1">' + (S.st.oda ? '<span class="dot">●</span> DWG 可用' : S.st.libredwg ? '<span class="dot warn">●</span> DWG 可用（内置转换器）' : '<span class="dot bad">●</span> DWG 需要 ODA 转换器') + '</button>' + sep +
         '<button type="button" data-set="1">监视文件夹 ' + (s.watch_enabled && s.watch_dir ? '开' : '关') + '</button>';
     } else if (S.view === 'scan' && S.scan) {
       f.textContent = (S.scan.names || []).slice(0, 2).join('、') + (S.scan.files > 2 ? ' 等 ' + S.scan.files + ' 张' : '') +
@@ -239,8 +239,11 @@
     h += '<div class="srow"><div class="l">脱敏后的图纸放在' + (s.output_mode === 'fixed' ? '<small class="mono">' + esc(s.output_dir || '还没有选择文件夹') + '</small>' : '') + '</div><div class="r">' +
       (s.output_mode === 'fixed' ? '<button type="button" class="btn" id="s-outdir">更改…</button>' : '') + sel('s-outmode', [['beside', '原文件旁「脱敏输出」'], ['fixed', '指定的文件夹']], s.output_mode === 'fixed' ? 'fixed' : 'beside') + '</div></div>';
     h += '<div class="srow"><div class="l">输出格式</div><div class="r">' + sel('s-format', [['same', '和原文件相同'], ['dxf', '都存为 DXF'], ['dwg', '都存为 DWG']], s.output_format || 'same') +
-      sel('s-dwgver', ['ACAD2018', 'ACAD2013', 'ACAD2010', 'ACAD2007', 'ACAD2004', 'ACAD2000'].map(v => [v, 'DWG ' + v.slice(4)]), s.dwg_version) + '</div></div>';
-    h += '<div class="srow"><div class="l">DWG 转换器<small>' + (st.oda ? '<span class="dot">●</span> ODA ' + esc(st.odaVersion) + ' 已连接' : '<span class="dot bad">●</span> 没找到。到 opendesign.com 免费下载 ODA File Converter，装好后点“检测”') + '</small></div><div class="r">' +
+      sel('s-dwgver', [['same', 'DWG 与原图相同']].concat(['ACAD2018', 'ACAD2013', 'ACAD2010', 'ACAD2007', 'ACAD2004', 'ACAD2000'].map(v => [v, 'DWG ' + v.slice(4)])), s.dwg_version || 'same') + '</div></div>';
+    h += '<div class="srow"><div class="l">DWG 转换器<small>' + (st.oda ? '<span class="dot">●</span> ODA ' + esc(st.odaVersion) + ' 已连接，DWG 按所选版本原样写回' :
+        st.libredwg ? '<span class="dot warn">●</span> 正在用内置 LibreDWG：只能写 DWG 2000，复杂图纸可能有偏差。装上免费的 ODA File Converter 质量更好' :
+        '<span class="dot bad">●</span> 没找到。免费下载 ODA File Converter，装好后点“检测”') + '</small></div><div class="r">' +
+      (st.oda ? '' : '<button type="button" class="btn" id="s-odadl">下载 ODA</button>') +
       '<button type="button" class="btn" id="s-odapick">浏览…</button><button type="button" class="btn" id="s-odadetect">检测</button></div></div>';
     h += '<label class="srow"><span class="l">同一个人在每批图纸里用同一个代号<small>关掉后，每批图纸从 人员01 重新编号</small></span>' + sw('s-reuse', s.reuse_mapping) + '</label>';
     h += '<div class="srow"><div class="l">监视文件夹<small class="mono">' + (s.watch_dir ? esc(s.watch_dir) + ' → ' + esc(s.watch_out_dir || '已脱敏') : '放进去的图纸会自动脱敏') + '</small></div><div class="r">' +
@@ -345,6 +348,8 @@
         const d = await pickDir(); if (d) save(id === 's-outdir' ? { output_dir: d, output_mode: 'fixed' } : { report_dir: d });
       } else if (id === 's-watchdir') {
         const d = await pickDir(); if (d) save({ watch_dir: d, watch_enabled: true });
+      } else if (id === 's-odadl') {
+        await call('open_oda_download');
       } else if (id === 's-odapick' || id === 's-odadetect') {
         let path = S.st.settings.oda_converter || '';
         if (id === 's-odapick') { path = native ? await call('pick_oda') : await ask('ODA File Converter', '输入程序路径', path); if (!path) return; }
