@@ -1,0 +1,11 @@
+# 复制为 wrangler.toml，把 id 换成你自己的 KV 命名空间 id（wrangler kv namespace create drawveil-files）
+name = "drawveil"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "FILES"
+id = "<你的 KV 命名空间 id>"
+
+# 可选：绑定自己的域名
+# routes = [{ pattern = "drawveil.example.com", custom_domain = true }]

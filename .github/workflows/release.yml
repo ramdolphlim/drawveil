@@ -1,0 +1,118 @@
+# 推送 v* 标签（例如 v1.0.0）时，打包 Mac 和 Windows 安装包并发布到 Releases
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python tests/run_tests.py
+
+  mac:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, arch: arm64 }
+          - { os: macos-15-intel, arch: intel }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: 版本号
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then V="${GITHUB_REF_NAME#v}"; else V="0.0.0"; fi
+          echo "V=$V" >> "$GITHUB_ENV"
+      - run: pip install -r desktop/requirements.txt
+      - name: 打包 .app 和 .dmg
+        working-directory: desktop
+        run: |
+          sed -i '' "s/^APP_VERSION = \".*\"/APP_VERSION = \"$V\"/" drawveil_desktop.py
+          pyinstaller --noconfirm --windowed --name "图隐" --icon assets/icon.icns \
+            --osx-bundle-identifier cc.limch.drawveil \
+            --add-data "ui:ui" --paths .. --hidden-import cad_desensitize drawveil_desktop.py
+          PL="dist/图隐.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $V" "$PL" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $V" "$PL"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 图隐 DrawVeil" "$PL" || true
+          /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$PL" || true
+          codesign --force --deep --sign - "dist/图隐.app"
+          mkdir -p dmg && cp -R "dist/图隐.app" dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname "DrawVeil" -srcfolder dmg -ov -format UDZO "DrawVeil-$V-mac-${{ matrix.arch }}.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: desktop/DrawVeil-*.dmg
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: 版本号
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then V="${GITHUB_REF_NAME#v}"; else V="0.0.0"; fi
+          echo "V=$V" >> "$GITHUB_ENV"
+      - run: pip install -r desktop/requirements.txt
+      - name: 打包 .exe
+        working-directory: desktop
+        run: |
+          N="${V%%-*}"; IFS=. read -r A B C <<< "$N"
+          sed -i "s/^APP_VERSION = \".*\"/APP_VERSION = \"$V\"/" drawveil_desktop.py
+          sed -i "s/1\.0\.0/$V/g; s/(1,0,0,0)/(${A:-0},${B:-0},${C:-0},0)/g" version_info.txt
+          sed -i "s/^AppVersion=.*/AppVersion=$V/" installer.iss
+          pyinstaller --noconfirm --windowed --name DrawVeil --icon assets/icon.ico \
+            --add-data "ui;ui" --paths .. --hidden-import cad_desensitize --version-file version_info.txt drawveil_desktop.py
+          7z a "DrawVeil-$V-win-x64-portable.zip" ./dist/DrawVeil/*
+      - name: 生成安装程序
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/FDrawVeil-$env:V-win-x64-setup" "/O." installer.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            desktop/DrawVeil-*-win-x64-setup.exe
+            desktop/DrawVeil-*-win-x64-portable.zip
+
+  release:
+    needs: [mac, windows]
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - run: ls -la out
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
+          body: |
+            ## 下载
+
+            | 系统 | 文件 |
+            |---|---|
+            | macOS（Apple 芯片） | `DrawVeil-*-mac-arm64.dmg` |
+            | macOS（Intel 芯片） | `DrawVeil-*-mac-intel.dmg` |
+            | Windows 10 / 11 | `DrawVeil-*-win-x64-setup.exe`（安装版）或 `*-portable.zip`（免安装） |
+
+            程序没有开发者签名，第一次打开：macOS 在「应用程序」里右键「图隐」→ 打开（提示“已损坏”就在终端执行 `xattr -cr /Applications/图隐.app`）；Windows 点“更多信息”→“仍要运行”。
+
+            处理 DWG 需要先安装免费的 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)。网页版：<https://drawveil.limch.cc>
