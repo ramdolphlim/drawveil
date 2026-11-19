@@ -34,7 +34,7 @@ jobs:
         with: { python-version: '3.12' }
       - name: 版本号
         run: |
-          T="${{ inputs.tag }}"; [ -n "$T" ] || { [ "$GITHUB_REF_TYPE" = tag ] && T="$GITHUB_REF_NAME"; }
+          T="${{ inputs.tag }}"; [ -n "$T" ] || { [ "$GITHUB_REF_TYPE" = tag ] && T="$GITHUB_REF_NAME"; } || true
           if [ -n "$T" ]; then V="${T#v}"; else V="0.0.0"; fi
           echo "V=$V" >> "$GITHUB_ENV"
       - run: pip install -r desktop/requirements.txt
@@ -69,7 +69,7 @@ jobs:
         with: { python-version: '3.12' }
       - name: 版本号
         run: |
-          T="${{ inputs.tag }}"; [ -n "$T" ] || { [ "$GITHUB_REF_TYPE" = tag ] && T="$GITHUB_REF_NAME"; }
+          T="${{ inputs.tag }}"; [ -n "$T" ] || { [ "$GITHUB_REF_TYPE" = tag ] && T="$GITHUB_REF_NAME"; } || true
           if [ -n "$T" ]; then V="${T#v}"; else V="0.0.0"; fi
           echo "V=$V" >> "$GITHUB_ENV"
       - run: pip install -r desktop/requirements.txt
